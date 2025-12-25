@@ -1,15 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { Upload, Download, MapPin, Image as ImageIcon, FileText } from 'lucide-react';
-
-// Type declarations for exif-js
-declare global {
-  interface Window {
-    EXIF: {
-      getData(img: HTMLImageElement, callback: () => void): void;
-      getTag(img: HTMLImageElement, tag: string): any;
-    };
-  }
-}
+import * as exifr from 'exifr';
 
 interface ImageData {
   name: string;
@@ -22,95 +13,39 @@ const GeoExtractor: React.FC = () => {
   const [currentPage, setCurrentPage] = useState<'home' | 'results'>('home');
   const [imageData, setImageData] = useState<ImageData[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
-  const [exifLoaded, setExifLoaded] = useState(false);
 
-  // Load EXIF library from CDN
-  useEffect(() => {
-    const script = document.createElement('script');
-    script.src = 'https://cdnjs.cloudflare.com/ajax/libs/exif-js/2.3.0/exif.min.js';
-    script.async = true;
-    script.onload = () => setExifLoaded(true);
-    document.body.appendChild(script);
-    
-    return () => {
-      document.body.removeChild(script);
-    };
-  }, []);
+  const extractGPSData = async (file: File): Promise<ImageData> => {
+    try {
+      console.log(`Processing ${file.name}...`);
+      
+      // Use exifr to parse GPS data directly from the file (works with HEIC!)
+      const gpsData = await exifr.gps(file);
+      
+      console.log(`GPS data for ${file.name}:`, gpsData);
 
-  const convertDMSToDD = (degrees: number, minutes: number, seconds: number, direction: string): number => {
-    let dd = degrees + minutes / 60 + seconds / 3600;
-    if (direction === 'S' || direction === 'W') {
-      dd = dd * -1;
-    }
-    return dd;
-  };
-
-  const extractGPSData = (file: File): Promise<ImageData> => {
-    return new Promise((resolve) => {
-      if (!exifLoaded || !window.EXIF) {
-        resolve({
+      if (gpsData && gpsData.latitude !== undefined && gpsData.longitude !== undefined) {
+        return {
+          name: file.name,
+          latitude: parseFloat(gpsData.latitude.toFixed(6)),
+          longitude: parseFloat(gpsData.longitude.toFixed(6))
+        };
+      } else {
+        return {
           name: file.name,
           latitude: null,
           longitude: null,
-          error: 'EXIF library not loaded'
-        });
-        return;
+          error: 'No GPS data found. Make sure Location Services were enabled when photo was taken.'
+        };
       }
-
-      const reader = new FileReader();
-      
-      reader.onload = (e) => {
-        const img = new Image();
-        img.onload = () => {
-          window.EXIF.getData(img, function(this: any) {
-            const lat = window.EXIF.getTag(this, 'GPSLatitude');
-            const latRef = window.EXIF.getTag(this, 'GPSLatitudeRef');
-            const lon = window.EXIF.getTag(this, 'GPSLongitude');
-            const lonRef = window.EXIF.getTag(this, 'GPSLongitudeRef');
-
-            if (lat && lon && latRef && lonRef) {
-              const latitude = convertDMSToDD(lat[0], lat[1], lat[2], latRef);
-              const longitude = convertDMSToDD(lon[0], lon[1], lon[2], lonRef);
-              
-              resolve({
-                name: file.name,
-                latitude: parseFloat(latitude.toFixed(6)),
-                longitude: parseFloat(longitude.toFixed(6))
-              });
-            } else {
-              resolve({
-                name: file.name,
-                latitude: null,
-                longitude: null,
-                error: 'No GPS data found'
-              });
-            }
-          });
-        };
-        
-        img.onerror = () => {
-          resolve({
-            name: file.name,
-            latitude: null,
-            longitude: null,
-            error: 'Failed to load image'
-          });
-        };
-        
-        img.src = e.target?.result as string;
+    } catch (error: any) {
+      console.error('Error processing file:', error);
+      return {
+        name: file.name,
+        latitude: null,
+        longitude: null,
+        error: `Error reading file: ${error.message || 'Unknown error'}`
       };
-      
-      reader.onerror = () => {
-        resolve({
-          name: file.name,
-          latitude: null,
-          longitude: null,
-          error: 'Failed to read file'
-        });
-      };
-      
-      reader.readAsDataURL(file);
-    });
+    }
   };
 
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -122,19 +57,8 @@ const GeoExtractor: React.FC = () => {
 
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
+      console.log(`Processing ${i + 1}/${files.length}: ${file.name}...`);
       
-      // Check if HEIC file
-      if (file.name.toLowerCase().endsWith('.heic')) {
-        results.push({
-          name: file.name,
-          latitude: null,
-          longitude: null,
-          error: 'HEIC format not supported in browsers. Please convert to JPG first.'
-        });
-        continue;
-      }
-
-      console.log(`Processing ${file.name}...`);
       const data = await extractGPSData(file);
       console.log(`Result for ${file.name}:`, data);
       results.push(data);
@@ -257,13 +181,13 @@ const GeoExtractor: React.FC = () => {
                       Upload Your Images
                     </h2>
                     <p className="text-lg text-gray-300">
-                      JPG or PNG files with GPS data
+                      JPG, PNG, or HEIC files
                     </p>
                     <p className="text-sm text-gray-400">
                       Click to browse or drag and drop
                     </p>
-                    <p className="text-xs text-yellow-400 mt-2">
-                      Note: HEIC files not supported. Convert to JPG first.
+                    <p className="text-xs text-green-400 mt-2">
+                      ✨ HEIC files supported natively - no conversion needed!
                     </p>
                   </div>
 
@@ -278,7 +202,7 @@ const GeoExtractor: React.FC = () => {
               id="file-upload"
               type="file"
               multiple
-              accept=".jpg,.jpeg,.png,image/jpeg,image/png"
+              accept=".jpg,.jpeg,.png,.heic,image/jpeg,image/png,image/heic"
               onChange={handleFileUpload}
               className="hidden"
               disabled={isProcessing}
@@ -367,7 +291,7 @@ const GeoExtractor: React.FC = () => {
                           rel="noopener noreferrer"
                           className="inline-block mt-2 text-sm text-blue-400 hover:text-blue-300 underline"
                         >
-                          View on Google Maps →
+                          View on Google Maps
                         </a>
                       </div>
                     ) : (
