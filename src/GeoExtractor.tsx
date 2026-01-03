@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { Upload, Download, MapPin, Image as ImageIcon, FileText, ExternalLink, AlertCircle } from 'lucide-react';
+import { Upload, Download, MapPin, Image as ImageIcon, FileText, ExternalLink, AlertCircle, Map as MapIconLucide, ArrowLeft } from 'lucide-react';
 import * as exifr from 'exifr';
+import { APIProvider, Map, AdvancedMarker, InfoWindow } from '@vis.gl/react-google-maps';
 
 interface ImageData {
   name: string;
@@ -10,11 +11,12 @@ interface ImageData {
 }
 
 const GeoExtractor: React.FC = () => {
-  const [currentPage, setCurrentPage] = useState<'home' | 'results'>('home');
+  const [currentPage, setCurrentPage] = useState<'home' | 'results' | 'map'>('home');
   const [imageData, setImageData] = useState<ImageData[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
   const [showPopupWarning, setShowPopupWarning] = useState(false);
   const [popupBlocked, setPopupBlocked] = useState(false);
+  const [selectedMarker, setSelectedMarker] = useState<number | null>(null);
 
   const extractGPSData = async (file: File): Promise<ImageData> => {
     try {
@@ -77,17 +79,14 @@ const GeoExtractor: React.FC = () => {
     
     const imagesWithGPS = imageData.filter(data => data.latitude !== null && data.longitude !== null);
 
-    // Try to open first location
     const firstUrl = `https://www.google.com/maps?q=${imagesWithGPS[0].latitude},${imagesWithGPS[0].longitude}`;
     const firstWindow = window.open(firstUrl, '_blank');
 
-    // Check if the first window opened successfully
     if (!firstWindow || firstWindow.closed || typeof firstWindow.closed === 'undefined') {
       setPopupBlocked(true);
       return;
     }
 
-    // Open the rest
     for (let i = 1; i < imagesWithGPS.length; i++) {
       setTimeout(() => {
         const url = `https://www.google.com/maps?q=${imagesWithGPS[i].latitude},${imagesWithGPS[i].longitude}`;
@@ -107,10 +106,20 @@ const GeoExtractor: React.FC = () => {
     if (imagesWithGPS.length > 1) {
       setShowPopupWarning(true);
     } else {
-      // Just open single location
       const url = `https://www.google.com/maps?q=${imagesWithGPS[0].latitude},${imagesWithGPS[0].longitude}`;
       window.open(url, '_blank');
     }
+  };
+
+  const showMapView = () => {
+    const imagesWithGPS = imageData.filter(data => data.latitude !== null && data.longitude !== null);
+    
+    if (imagesWithGPS.length === 0) {
+      alert('No images with GPS data to display on map!');
+      return;
+    }
+
+    setCurrentPage('map');
   };
 
   const downloadTextFile = () => {
@@ -144,6 +153,7 @@ const GeoExtractor: React.FC = () => {
     setCurrentPage('home');
     setImageData([]);
     setIsProcessing(false);
+    setSelectedMarker(null);
   };
 
   // Custom Popup Warning Modal
@@ -153,7 +163,6 @@ const GeoExtractor: React.FC = () => {
     return (
       <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-fadeIn">
         <div className="relative max-w-md w-full bg-gradient-to-br from-indigo-900/90 to-purple-900/90 backdrop-blur-xl border-2 border-purple-500/50 rounded-2xl p-8 shadow-2xl shadow-purple-500/30 animate-scaleIn">
-          {/* Decorative elements */}
           <div className="absolute top-0 left-0 w-full h-full rounded-2xl overflow-hidden pointer-events-none">
             {[...Array(20)].map((_, i) => (
               <div
@@ -171,11 +180,9 @@ const GeoExtractor: React.FC = () => {
             ))}
           </div>
 
-          {/* Content */}
           <div className="relative z-10">
             {!popupBlocked ? (
               <>
-                {/* Icon */}
                 <div className="flex justify-center mb-6">
                   <div className="relative">
                     <div className="absolute inset-0 bg-gradient-to-r from-blue-500 to-purple-500 rounded-full blur-xl opacity-50 animate-pulse"></div>
@@ -185,17 +192,14 @@ const GeoExtractor: React.FC = () => {
                   </div>
                 </div>
 
-                {/* Title */}
                 <h2 className="text-2xl font-bold text-center mb-4 bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">
                   Ready to Explore?
                 </h2>
 
-                {/* Message */}
                 <p className="text-gray-200 text-center mb-6">
                   About to open <span className="text-purple-400 font-bold">{imagesWithGPS.length} locations</span> in Google Maps
                 </p>
 
-                {/* Info box */}
                 <div className="bg-blue-500/10 border border-blue-400/30 rounded-lg p-4 mb-6">
                   <div className="flex items-start gap-3">
                     <AlertCircle className="w-5 h-5 text-blue-400 flex-shrink-0 mt-0.5" />
@@ -210,7 +214,6 @@ const GeoExtractor: React.FC = () => {
                   </div>
                 </div>
 
-                {/* Buttons */}
                 <div className="flex gap-3">
                   <button
                     onClick={() => setShowPopupWarning(false)}
@@ -228,7 +231,6 @@ const GeoExtractor: React.FC = () => {
               </>
             ) : (
               <>
-                {/* Blocked Icon */}
                 <div className="flex justify-center mb-6">
                   <div className="relative">
                     <div className="absolute inset-0 bg-gradient-to-r from-red-500 to-orange-500 rounded-full blur-xl opacity-50 animate-pulse"></div>
@@ -238,17 +240,14 @@ const GeoExtractor: React.FC = () => {
                   </div>
                 </div>
 
-                {/* Title */}
                 <h2 className="text-2xl font-bold text-center mb-4 bg-gradient-to-r from-red-400 to-orange-400 bg-clip-text text-transparent">
                   Popups Blocked
                 </h2>
 
-                {/* Message */}
                 <p className="text-gray-200 text-center mb-6">
                   Your browser blocked the popups. Please allow them to continue.
                 </p>
 
-                {/* Instructions */}
                 <div className="bg-red-500/10 border border-red-400/30 rounded-lg p-4 mb-6">
                   <div className="text-sm text-gray-300 space-y-2">
                     <p className="font-semibold text-red-300 mb-3">How to enable popups:</p>
@@ -269,7 +268,6 @@ const GeoExtractor: React.FC = () => {
                   </div>
                 </div>
 
-                {/* Buttons */}
                 <div className="flex gap-3">
                   <button
                     onClick={() => {
@@ -315,7 +313,6 @@ const GeoExtractor: React.FC = () => {
   if (currentPage === 'home') {
     return (
       <div className="min-h-screen relative overflow-hidden bg-black">
-        {/* Animated Galaxy Background */}
         <div className="absolute inset-0">
           <div className="absolute inset-0 bg-gradient-to-b from-indigo-950 via-purple-950 to-black opacity-80"></div>
           {[...Array(150)].map((_, i) => (
@@ -332,7 +329,6 @@ const GeoExtractor: React.FC = () => {
               }}
             />
           ))}
-          {/* Larger stars */}
           {[...Array(30)].map((_, i) => (
             <div
               key={`star-${i}`}
@@ -347,13 +343,11 @@ const GeoExtractor: React.FC = () => {
               }}
             />
           ))}
-          {/* Nebula effects */}
           <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-purple-600 rounded-full opacity-20 blur-3xl animate-pulse"></div>
           <div className="absolute bottom-1/4 right-1/4 w-80 h-80 bg-blue-600 rounded-full opacity-20 blur-3xl animate-pulse" style={{ animationDelay: '2s' }}></div>
           <div className="absolute top-1/2 left-1/2 w-64 h-64 bg-pink-600 rounded-full opacity-15 blur-3xl animate-pulse" style={{ animationDelay: '1s' }}></div>
         </div>
 
-        {/* Content */}
         <div className="relative z-10 min-h-screen flex flex-col items-center justify-center px-4">
           <div className="text-center mb-12 space-y-4">
             <div className="flex items-center justify-center gap-3 mb-6">
@@ -367,14 +361,12 @@ const GeoExtractor: React.FC = () => {
             </p>
           </div>
 
-          {/* Upload Area */}
           <div className="w-full max-w-2xl">
             <label
               htmlFor="file-upload"
               className="group relative block cursor-pointer"
             >
               <div className="relative bg-gradient-to-br from-indigo-900/40 to-purple-900/40 backdrop-blur-md border-2 border-purple-500/50 rounded-2xl p-16 transition-all duration-300 hover:border-purple-400 hover:shadow-2xl hover:shadow-purple-500/30 hover:scale-105">
-                {/* Glow effect */}
                 <div className="absolute inset-0 rounded-2xl bg-gradient-to-r from-blue-500/20 to-purple-500/20 opacity-0 group-hover:opacity-100 transition-opacity duration-300 blur-xl"></div>
                 
                 <div className="relative flex flex-col items-center gap-6">
@@ -440,11 +432,126 @@ const GeoExtractor: React.FC = () => {
     );
   }
 
+  if (currentPage === 'map') {
+    console.log('MAP KEY:', import.meta.env.VITE_GOOGLE_MAPS_API_KEY);
+    const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY as string | undefined;
+    const mapId = import.meta.env.VITE_GOOGLE_MAPS_MAP_ID as string | undefined;
+
+    console.log('MAP KEY:', apiKey);
+    console.log('MAP ID:', mapId);
+
+    if (!apiKey || !mapId) {
+      return (
+        <div className="min-h-screen bg-black text-white p-6">
+          Missing env vars:
+          <pre className="mt-2 text-sm">
+            VITE_GOOGLE_MAPS_API_KEY = {String(!!apiKey)}
+            {'\n'}
+            VITE_GOOGLE_MAPS_MAP_ID  = {String(!!mapId)}
+          </pre>
+        </div>
+      );
+    }
+    const imagesWithGPS = imageData.filter(data => data.latitude !== null && data.longitude !== null);
+    
+    // Calculate center and zoom based on markers
+    const centerLat = imagesWithGPS.reduce((sum, img) => sum + (img.latitude || 0), 0) / imagesWithGPS.length;
+    const centerLng = imagesWithGPS.reduce((sum, img) => sum + (img.longitude || 0), 0) / imagesWithGPS.length;
+    
+    return (
+      <div className="min-h-screen relative overflow-hidden bg-black">
+        <div className="absolute inset-0">
+          <div className="absolute inset-0 bg-gradient-to-b from-indigo-950 via-purple-950 to-black opacity-80"></div>
+        </div>
+
+        <div className="relative z-10 min-h-screen flex flex-col">
+          {/* Header */}
+          <div className="p-6 bg-gradient-to-r from-indigo-900/50 to-purple-900/50 backdrop-blur-md border-b border-purple-500/30">
+            <div className="max-w-7xl mx-auto flex items-center justify-between">
+              <div className="flex items-center gap-4">
+                <button
+                  onClick={() => setCurrentPage('results')}
+                  className="p-2 hover:bg-white/10 rounded-lg transition-all"
+                >
+                  <ArrowLeft className="w-6 h-6 text-white" />
+                </button>
+                <div className="flex items-center gap-3">
+                  <MapIconLucide className="w-8 h-8 text-blue-400" />
+                  <h1 className="text-2xl font-bold bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">
+                    Map View
+                  </h1>
+                </div>
+              </div>
+              <div className="text-gray-300">
+                {imagesWithGPS.length} location{imagesWithGPS.length !== 1 ? 's' : ''}
+              </div>
+            </div>
+          </div>
+
+          {/* Map */}
+          <div className="flex-1 p-4">
+            <div className="h-full rounded-2xl overflow-hidden border-2 border-purple-500/30 shadow-2xl shadow-purple-500/20">
+              <APIProvider apiKey={(import.meta.env.VITE_GOOGLE_MAPS_API_KEY as string) || ''}>
+                <Map
+                  defaultCenter={{ lat: centerLat, lng: centerLng }}
+                  defaultZoom={imagesWithGPS.length === 1 ? 15 : 10}
+                  mapId={mapId}
+                  style={{ width: '100%', height: '100%' }}
+                  gestureHandling="greedy"
+                  disableDefaultUI={false}
+                >
+                  {imagesWithGPS.map((image, index) => (
+                    <AdvancedMarker
+                      key={index}
+                      position={{ lat: image.latitude!, lng: image.longitude! }}
+                      onClick={() => setSelectedMarker(index)}
+                    >
+                      <div className="relative">
+                        <div className="absolute inset-0 bg-gradient-to-r from-blue-500 to-purple-500 rounded-full blur-md opacity-75 animate-pulse"></div>
+                        <div className="relative bg-gradient-to-br from-blue-500 to-purple-600 p-3 rounded-full border-2 border-white shadow-lg cursor-pointer hover:scale-110 transition-transform">
+                          <MapPin className="w-6 h-6 text-white" />
+                        </div>
+                      </div>
+                    </AdvancedMarker>
+                  ))}
+
+                  {selectedMarker !== null && (
+                    <InfoWindow
+                      position={{
+                        lat: imagesWithGPS[selectedMarker].latitude!,
+                        lng: imagesWithGPS[selectedMarker].longitude!
+                      }}
+                      onCloseClick={() => setSelectedMarker(null)}
+                    >
+                      <div className="p-3 min-w-[200px]">
+                        <h3 className="font-bold text-gray-900 mb-2">{imagesWithGPS[selectedMarker].name}</h3>
+                        <p className="text-sm text-gray-700 mb-1">
+                          📍 {imagesWithGPS[selectedMarker].latitude}, {imagesWithGPS[selectedMarker].longitude}
+                        </p>
+                        <a
+                          href={`https://www.google.com/maps?q=${imagesWithGPS[selectedMarker].latitude},${imagesWithGPS[selectedMarker].longitude}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-blue-600 hover:text-blue-800 text-sm underline"
+                        >
+                          Open in Google Maps
+                        </a>
+                      </div>
+                    </InfoWindow>
+                  )}
+                </Map>
+              </APIProvider>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   // Results Page
   return (
     <>
       <div className="min-h-screen relative overflow-hidden bg-black">
-        {/* Background */}
         <div className="absolute inset-0">
           <div className="absolute inset-0 bg-gradient-to-b from-indigo-950 via-purple-950 to-black opacity-80"></div>
           {[...Array(100)].map((_, i) => (
@@ -462,7 +569,6 @@ const GeoExtractor: React.FC = () => {
           ))}
         </div>
 
-        {/* Content */}
         <div className="relative z-10 min-h-screen px-4 py-12">
           <div className="max-w-5xl mx-auto">
             <div className="text-center mb-8">
@@ -474,7 +580,6 @@ const GeoExtractor: React.FC = () => {
               </p>
             </div>
 
-            {/* Results Grid */}
             <div className="grid gap-4 mb-8">
               {imageData.map((data, index) => (
                 <div
@@ -513,8 +618,16 @@ const GeoExtractor: React.FC = () => {
               ))}
             </div>
 
-            {/* Action Buttons */}
-            <div className="flex flex-col sm:flex-row gap-4 justify-center">
+            <div className="flex flex-col sm:flex-row gap-4 justify-center flex-wrap">
+              <button
+                onClick={showMapView}
+                className="group relative px-8 py-4 bg-gradient-to-r from-pink-600 to-rose-600 rounded-xl font-semibold text-white transition-all duration-300 hover:shadow-xl hover:shadow-pink-500/50 hover:scale-105"
+              >
+                <div className="flex items-center gap-3">
+                  <MapIconLucide className="w-5 h-5" />
+                  See All Files on Map
+                </div>
+              </button>
               <button
                 onClick={openAllInMaps}
                 className="group relative px-8 py-4 bg-gradient-to-r from-green-600 to-emerald-600 rounded-xl font-semibold text-white transition-all duration-300 hover:shadow-xl hover:shadow-green-500/50 hover:scale-105"
@@ -546,7 +659,6 @@ const GeoExtractor: React.FC = () => {
         </div>
       </div>
 
-      {/* Custom Popup Warning Modal */}
       {showPopupWarning && <PopupWarningModal />}
     </>
   );
